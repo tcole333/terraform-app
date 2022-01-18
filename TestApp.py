@@ -11,6 +11,11 @@ adf_name = None
 vnet = None
 vnet_rg = None
 vnet_address_space = None
+storage_name = None
+storage_rg = None
+subnets = []
+storage_ip_addresses = []
+storage_allowed_subnets = []
 
 st.title('Sample Terraform App')
 
@@ -37,6 +42,22 @@ if region:
   if st.checkbox('Setup ADF'):
     adf_name = st.text_input('ADF Name (Must be Globally Unique)')
     adf_rg = st.selectbox('Select ADF Resource Group', resource_groups)
+  subnets = [subnet1_name, subnet2_name]
+  if st.checkbox('Create Storage Account'):
+    storage_name = st.text_input('Storage Account Name')
+    storage_rg = st.selectbox('Select Storage Resource Group', resource_groups)
+    containers = st_tags(
+      label='Enter Container Names (Up to 10):',
+      text='Press enter to add more',
+      maxtags = 10,
+      key='2') 
+    storage_ip_addresses = st.text_area('Enter the allowed ip addresses or CIDR blocks separated by a comma:')
+    storage_allowed_subnets = st.multiselect('Select subnets to allow access to the storage account', [i if i else None for i in subnets])
+#adding a list of subnets to allow them to be selected for storage accounts   
+storage_ip_addresses = [str(i) for i in storage_ip_addresses]
+storage_subnet_ids = [f'azurerm_subnet.{i}.id' for i in storage_allowed_subnets]
+
+
 
 
 tf_main = """
@@ -57,7 +78,7 @@ terraform {
 """
 for num, rg in enumerate(resource_groups):
    tf_main += f"""
-resource "azurerm_resource_group" "rg_{num}" {{
+resource "azurerm_resource_group" "rg_{num+1 }" {{
   \n name = "{rg}"
   \n location = "{region}"
 \n }}
@@ -98,27 +119,22 @@ if adf_name:
   \n location            = azurerm_resource_group.{adf_rg}.location
 \n }}
 """
-# main_tf_file = f"""
-# terraform {{
-#   required_providers {{
-#     azurerm = {{
-#       source  = "hashicorp/azurerm"
-#       version = "~> 2.65"
-#     }}
-#   }}
+if storage_name:
+  tf_main += f"""
+  resource "azurerm_storage_account" "{storage_name}" {{
+  \n name                     = "{storage_name}"
+  \n resource_group_name      = azurerm_resource_group.{storage_rg}.name
+  \n location                 = azurerm_resource_group.{storage_rg}.location
+  \n account_tier             = "Standard"
+  \n account_replication_type = "LRS"
 
-#   required_version = ">= 1.1.0"
-# }}
-
-# provider "azurerm" {{
-#   features {{}}
-# }}
-
-# resource "azurerm_resource_group" "rg" {{
-#   name     = 
-#   location = 
-# }}
-# """
+  \n network_rules {{
+    \n default_action = "Deny"
+    \n ip_rules       = [{storage_ip_addresses}]
+    \n virtual_network_subnet_ids = {storage_subnet_ids}
+  \n }}
+\n }}
+  """
 gen_code = st.button('Generate Code')
 if gen_code:
     st.write(gen_code)
